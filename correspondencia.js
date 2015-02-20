@@ -11,8 +11,9 @@ var application_root = __dirname,
     mongoose = require('mongoose');
  
 var app = express();
- 
-// conexión
+
+
+// conexión--------------------------------
 
 //var conCorrespondencia = mongoose.createConnection('mongodb://172.20.0.223/correspondencia');
 var conexion = mongoose.createConnection('mongodb://172.20.0.223/');
@@ -22,7 +23,7 @@ var conConstancias = conexion.useDb('constancias');
  
 //mongoose.connect('mongodb://172.20.0.223/correspondencia');
  
-// config
+// config-----------------------------------
  
 //app.use(express.bodyParser());
 app.use(methodOverride());
@@ -41,7 +42,45 @@ app.use(bodyParser.urlencoded({ extended: true }));
 app.use(multer());
 
 app.use(express.static(path.join(application_root, "public")));
- 
+
+
+//función para autenticación básica--------------------------------
+
+app.use(function(req, res, next) {
+    var auth;
+
+    // check whether an autorization header was send    
+    if (req.headers.authorization) {
+      // only accepting basic auth, so:
+      // * cut the starting "Basic " from the header
+      // * decode the base64 encoded username:password
+      // * split the string at the colon
+      // -> should result in an array
+      auth = new Buffer(req.headers.authorization.substring(6), 'base64').toString().split(':');
+    }
+
+    // checks if:
+    // * auth array exists 
+    // * first value matches the expected user 
+    // * second value the expected password
+    if (!auth || auth[0] !== 'sistemas' || auth[1] !== 'sistemas2015') {
+        // any of the tests failed
+        // send an Basic Auth request (HTTP Code: 401 Unauthorized)
+        res.statusCode = 401;
+        // MyRealmName can be changed to anything, will be prompted to the user
+        res.setHeader('WWW-Authenticate', 'Basic realm="MyRealmName"');
+        // this will displayed in the browser when authorization is cancelled
+        res.end('Unauthorized');
+    } else {
+        // continue with processing, user was authenticated
+        next();
+    }
+});
+
+
+//----------------------------------------------------------------
+
+
 var Schema = mongoose.Schema; //Schema.ObjectId
  
 // Schemas___________________________________________________________________________
@@ -58,7 +97,7 @@ var Sizes = new Schema({
 });
  
  
-// Schema para correspondencia
+// Schema global para documentos de mongo
  
 var documento = new Schema({
     //description: { type: String, required: true },
@@ -76,6 +115,17 @@ var documento = new Schema({
 
 });
  
+
+
+documento.statics.nuevapagina = function(clavedoc, doc){
+  this.findOne({ clave : clavedoc }).sort(num_pagina, 1).run( function(err, doc) {
+     var max = doc.num_pagina + 1;
+}
+
+
+
+
+
 // validation
  
 // Product.path('title').validate(function (v) {
@@ -99,7 +149,18 @@ var modeloConstancias = conConstancias.model('documento', documento,'antecedente
 
 */
  
- 
+/* funcion ya no usada para autenticación básica
+ function checkAuth(req, res, next) {
+    if (!req.session.user_id) {
+       res.send('No estás autorizado para ver esto');
+       console.log("no esta autorizado");
+    } else {
+      console.log("esta autorizado");
+     next();
+    }
+}
+*/
+
 // REST api__________________________________________________________________________________
  
 app.get('/api', function (req, res) {
@@ -156,7 +217,23 @@ app.post('/api/constancias', function (req, res) {
   });
   return res.send(documento);
 });
- 
+
+app.post('/login', function (req, res) {
+var post = req.body;
+    if (post.user === '$1stemas' && post.password === 'sist2015') {
+      req.session.user_id = 1;
+      console.log("autenticado correctamente");
+      res.redirect('/api');
+    } else {
+        res.send('Bad user/pass');
+  }
+}); 
+
+app.get('/logout', function (req, res) {
+   delete req.session.user_id;
+   res.redirect('/login');
+});      
+//------------------------------------------------------------
 // PUT to UPDATE
  
 // Bulk update
@@ -250,7 +327,7 @@ app.get('/api/documentos/porclave/:clave', function (req, res) {
 
 
 app.get('/api/documentos/imagen/:id', function (req, res) {
-  return ProductModel.findById(req.params.id, function (err, documento) {
+  return modeloCorrespondencia.findById(req.params.id, function (err, documento) {
     if (!err) {
       return res.send(documento.imagen_docto);
     } else {
