@@ -13,24 +13,21 @@ var application_root = __dirname,
 var app = express();
 
 
-// conexión--------------------------------
-
-//var conCorrespondencia = mongoose.createConnection('mongodb://172.20.0.223/correspondencia');
+// conexiones-------------------------------------------------------
 var conexion = mongoose.createConnection('mongodb://172.20.0.223/');
 var conCorrespondencia = conexion.useDb('correspondencia');
 var conConstancias = conexion.useDb('constancias');
-//var conConstancias = mongoose.createConnection('mongodb://localhost/constancias');
- 
 //mongoose.connect('mongodb://172.20.0.223/correspondencia');
  
-// config-----------------------------------
+
+// config-----------------------------------------------------------------------
  
 //app.use(express.bodyParser());
 app.use(methodOverride());
 app.use(session({ resave: true, saveUninitialized: true,secret: 'uwotm8' }));
+
 //app.use(app.router);
 app.use(errorHandler({ dumpExceptions: true, showStack: true }));
-
 // parse application/json
 app.use(bodyParser.json({limit: '10mb'}));                        
 //app.use(bodyParser({limit: '5mb'}));
@@ -45,7 +42,6 @@ app.use(express.static(path.join(application_root, "public")));
 
 
 //función para autenticación básica--------------------------------
-
 app.use(function(req, res, next) {
     var auth;
 
@@ -100,7 +96,6 @@ var Sizes = new Schema({
 // Schema global para documentos de mongo
  
 var documento = new Schema({
-    //description: { type: String, required: true },
     clave: { type: String, required: true },
     imagen_docto: { type: String },
     num_pagina: { type: Number },
@@ -112,17 +107,41 @@ var documento = new Schema({
     shardkey: { type: String },
     datos_ocultos: { type: String },
     fecha_insercion: { type: Date, default: Date.now }
-
 });
  
 
+var ProductModel = mongoose.model('documento', documento);
+var modeloCorrespondencia = conCorrespondencia.model('modeloCorrespondencia', documento, 'documentos');
+var modeloConstancias = conConstancias.model('modeloConstancias', documento,'antecedentes');
 
-documento.statics.nuevapagina = function(clavedoc, doc){
-  this.findOne({ clave : clavedoc }).sort(num_pagina, 1).run( function(err, doc) {
-     var max = doc.num_pagina + 1;
-}
+//función que se realiza antes de guardar el documento---------------------------------------------------
+documento.pre('save', function(next){
+  self = this;
+  console.log(self.constructor.modelName);
+  var ModeloActual = self.constructor.modelName;
+  
+  function siguiente(err,data){
+    if( data === null){      
+      self.num_pagina = 1;      
+      next();
+    }
+    else
+    {
+      self.num_pagina = data.num_pagina + 1;
+      next();
+    }    
+  };
 
+  //mongoose.model("'" + ModeloActual + "'").findOne({ clave: this.clave }).select('num_pagina').sort('-num_pagina').exec(siguiente);  
 
+  if( ModeloActual === "modeloConstancias"){
+    modeloConstancias.findOne({ clave: this.clave }).select('num_pagina').sort('-num_pagina').exec(siguiente);
+  }
+  else if(ModeloActual === "modeloCorrespondencia"){
+    modeloCorrespondencia.findOne({ clave: this.clave }).select('num_pagina').sort('-num_pagina').exec(siguiente);
+  }
+    
+});
 
 
 
@@ -141,25 +160,11 @@ documento.statics.nuevapagina = function(clavedoc, doc){
 //     return v.length > 10;
 // }, 'Product description should be more than 10 characters');
  
-var ProductModel = mongoose.model('documento', documento);
-var modeloCorrespondencia = conCorrespondencia.model('documento', documento, 'documentos');
-var modeloConstancias = conConstancias.model('documento', documento,'antecedentes');
 
-/* Product Document 
 
-*/
- 
-/* funcion ya no usada para autenticación básica
- function checkAuth(req, res, next) {
-    if (!req.session.user_id) {
-       res.send('No estás autorizado para ver esto');
-       console.log("no esta autorizado");
-    } else {
-      console.log("esta autorizado");
-     next();
-    }
-}
-*/
+
+//::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+
 
 // REST api__________________________________________________________________________________
  
@@ -169,10 +174,10 @@ app.get('/api', function (req, res) {
  
 // POST to CREATE
 app.post('/api/documentos', function (req, res) {
-  var documento;
+  var documento1;
   console.log("POST: ");
-  console.log(req.body);
-  documento = new modeloCorrespondencia({
+  //console.log(req.body);
+  documento1 = new modeloCorrespondencia({
     clave: req.body.clave,
     imagen_docto: req.body.imagen_docto,
     num_pagina: req.body.num_pagina,
@@ -183,20 +188,20 @@ app.post('/api/documentos', function (req, res) {
     shardkey: req.body.shardkey,
     datos_ocultos: req.body.datos_ocultos    
   });
-  documento.save(function (err) {
+  documento1.save(function (err) {
     if (!err) {
       return console.log("created");
     } else {
       return console.log(err);
     }
   });
-  return res.send(documento);
+  return res.send(documento1.id);
 });
 
 app.post('/api/constancias', function (req, res) {
   var documento;
   console.log("POST: ");
-  console.log(req.body);
+  //console.log(req.body);
   documento = new modeloConstancias({
     clave: req.body.clave,
     imagen_docto: req.body.imagen_docto,
@@ -215,24 +220,12 @@ app.post('/api/constancias', function (req, res) {
       return console.log(err);
     }
   });
-  return res.send(documento);
+  return res.send(documento.id);
 });
 
-app.post('/login', function (req, res) {
-var post = req.body;
-    if (post.user === '$1stemas' && post.password === 'sist2015') {
-      req.session.user_id = 1;
-      console.log("autenticado correctamente");
-      res.redirect('/api');
-    } else {
-        res.send('Bad user/pass');
-  }
-}); 
 
-app.get('/logout', function (req, res) {
-   delete req.session.user_id;
-   res.redirect('/login');
-});      
+
+   
 //------------------------------------------------------------
 // PUT to UPDATE
  
@@ -279,8 +272,10 @@ app.put('/api/products/:id', function (req, res) {
   });
 });
  
-// Funciones get
+// Funciones get___________________________________________________________________________________________
  
+
+
 // List products
 app.get('/api/products', function (req, res) {
   return ProductModel.find(function (err, documento) {
@@ -291,8 +286,9 @@ app.get('/api/products', function (req, res) {
     }
   });
 });
- 
-// Single product
+
+
+// un solo documento por id de mongo para correspondencia
 app.get('/api/documentos/:id', function (req, res) {
   //return ProductModel.findById(req.params.id, function (err, documento) {
   return modeloCorrespondencia.findById(req.params.id, function (err, documento) {  
@@ -304,6 +300,7 @@ app.get('/api/documentos/:id', function (req, res) {
   });
 });
 
+//un solo documento por id de mongo para antecedentes
 app.get('/api/constancias/:id', function (req, res) {
   return modeloConstancias.findById(req.params.id, function (err, documento) {  
     if (!err) {
@@ -314,7 +311,7 @@ app.get('/api/constancias/:id', function (req, res) {
   });
 });
 
-//conjunto de documentos por campo clave
+//conjunto de documentos por campo "clave" para correspondencia
 app.get('/api/documentos/porclave/:clave', function (req, res) {
   return ProductModel.find({ clave: req.params.clave }, function (err, documento) {
     if (!err) {
@@ -326,6 +323,7 @@ app.get('/api/documentos/porclave/:clave', function (req, res) {
 });
 
 
+//devuelve el campo de la imagen del documento a partir del id de mongo para correpondencia
 app.get('/api/documentos/imagen/:id', function (req, res) {
   return modeloCorrespondencia.findById(req.params.id, function (err, documento) {
     if (!err) {
@@ -365,5 +363,4 @@ app.delete('/api/products/:id', function (req, res) {
 });
  
 // launch server
- 
 app.listen(4242);
