@@ -17,6 +17,7 @@ var app = express();
 var conexion = mongoose.createConnection('mongodb://172.20.0.223/');
 var conCorrespondencia = conexion.useDb('correspondencia');
 var conConstancias = conexion.useDb('constancias');
+var conRH = conexion.useDb('RH');
 //mongoose.connect('mongodb://172.20.0.223/correspondencia');
  
 
@@ -98,6 +99,7 @@ var Sizes = new Schema({
 var documento = new Schema({
     clave: { type: String, required: true },
     imagen_docto: { type: String },
+    thumbnail: { type: String },
     num_pagina: { type: Number },
     tipo_docto: { type: String },
     subtipo_docto: { type: String },
@@ -113,8 +115,9 @@ var documento = new Schema({
 var ProductModel = mongoose.model('documento', documento);
 var modeloCorrespondencia = conCorrespondencia.model('modeloCorrespondencia', documento, 'documentos');
 var modeloConstancias = conConstancias.model('modeloConstancias', documento,'antecedentes');
+var modeloRH = conRH.model('modeloRH', documento, 'pri_documentacion');
 
-//función que se realiza antes de guardar el documento---------------------------------------------------
+//función pre que se realiza antes de guardar el documento---------------------------------------------------
 documento.pre('save', function(next){
   self = this;
   console.log(self.constructor.modelName);
@@ -132,18 +135,17 @@ documento.pre('save', function(next){
     }    
   };
 
-  //mongoose.model("'" + ModeloActual + "'").findOne({ clave: this.clave }).select('num_pagina').sort('-num_pagina').exec(siguiente);  
-
   if( ModeloActual === "modeloConstancias"){
     modeloConstancias.findOne({ clave: this.clave }).select('num_pagina').sort('-num_pagina').exec(siguiente);
   }
   else if(ModeloActual === "modeloCorrespondencia"){
     modeloCorrespondencia.findOne({ clave: this.clave }).select('num_pagina').sort('-num_pagina').exec(siguiente);
   }
+  else if(ModeloActual === "modeloRH"){
+    modeloRH.findOne({ clave: this.clave }).select('num_pagina').sort('-num_pagina').exec(siguiente);
+  }
     
 });
-
-
 
 // validation
  
@@ -163,7 +165,7 @@ documento.pre('save', function(next){
 
 
 
-//::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+//:::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
 
 // REST api__________________________________________________________________________________
@@ -172,7 +174,10 @@ app.get('/api', function (req, res) {
   res.send('API de Mongo funcionando :)');
 });
  
-// POST to CREATE
+
+// Funciones POST___________________________________________________________________________
+
+// POST para correspondencia----------------------------------------
 app.post('/api/documentos', function (req, res) {
   var documento1;
   console.log("POST: ");
@@ -198,6 +203,8 @@ app.post('/api/documentos', function (req, res) {
   return res.send(documento1.id);
 });
 
+
+//POST para constancias/antecedentes---------------------------------
 app.post('/api/constancias', function (req, res) {
   var documento;
   console.log("POST: ");
@@ -223,11 +230,37 @@ app.post('/api/constancias', function (req, res) {
   return res.send(documento.id);
 });
 
+//POST para RH--------------------------------------------------------
+app.post('/api/RH', function (req, res) {
+  var documento;
+  console.log("POST: ");
+  //console.log(req.body);
+  documento = new modeloRH({
+    clave: req.body.clave,
+    imagen_docto: req.body.imagen_docto,
+    thumbnail: req.body.thumbnail,
+    num_pagina: req.body.num_pagina,
+    tipo_docto: req.body.tipo_docto,
+    subtipo_docto: req.body.subtipo_docto,
+    tipo_archivo: req.body.tipo_archivo,
+    metadatos: req.body.metadatos,
+    shardkey: req.body.shardkey,
+    datos_ocultos: req.body.datos_ocultos    
+  });
+  documento.save(function (err) {
+    if (!err) {
+      return console.log("created");
+    } else {
+      return console.log(err);
+    }
+  });
+  return res.send(documento.id);
+});
 
 
    
-//------------------------------------------------------------
-// PUT to UPDATE
+//------------------------------------------------------------------------------------------------
+// Funciones PUT para actualizar__________________________________________________________________
  
 // Bulk update
 app.put('/api/products', function (req, res) {
@@ -271,6 +304,22 @@ app.put('/api/products/:id', function (req, res) {
     });
   });
 });
+
+//desactivar documento para RH------------------------------------------
+app.put('/api/rh/desactivar/:id', function (req, res) {
+  return modeloRH.findById(req.params.id, function (err, product) {
+    product.status_docto = 0;
+  return product.save(function (err) {
+      if (!err) {
+        console.log("updated");
+      } else {
+        console.log(err);
+      }
+      return res.send(product.id);      
+    });
+  });
+});
+
  
 // Funciones get___________________________________________________________________________________________
  
@@ -287,6 +336,53 @@ app.get('/api/products', function (req, res) {
   });
 });
 
+app.get('/api/prueba/:clave', function(req,res) {
+  return modeloCorrespondencia.find({ clave: req.params.clave }, 'clave num_pagina tipo_docto fecha_insercion',function (err, documento) {  
+    if (!err) {
+      return res.send(documento);
+    } else {
+      return console.log(err);
+    }
+  });
+});
+
+//Funciones get para RH--------------------------------------------------------------------------
+
+app.get('/api/rh/:id', function (req, res) {
+  //return ProductModel.findById(req.params.id, function (err, documento) {
+  return modeloRH.findById(req.params.id, function (err, documento) {  
+    if (!err) {
+      return res.send(documento);
+    } else {
+      return console.log(err);
+    }
+  });
+});
+
+
+//devuelve todos los documentos de un empleado(campo clave coresponde al enlace del empleado)
+app.get('/api/rh/porclave/:clave', function(req,res) {
+  return modeloRH.find({ clave: req.params.clave }, 'clave num_pagina tipo_docto fecha_insercion',function (err, documento) {  
+    if (!err) {
+      return res.send(documento);
+    } else {
+      return console.log(err);
+    }
+  });
+});
+
+//devuelve el campo de la imagen del documento a partir del id de mongo para RH
+app.get('/api/rh/imagen/:id', function (req, res) {
+  return modeloRH.findById(req.params.id, function (err, documento) {
+    if (!err) {
+      return res.send(documento.imagen_docto);
+    } else {
+      return console.log(err);
+    }
+  });
+});
+
+//Funciones get para correspondencia-------------------------------------------------------------
 
 // un solo documento por id de mongo para correspondencia
 app.get('/api/documentos/:id', function (req, res) {
@@ -300,20 +396,9 @@ app.get('/api/documentos/:id', function (req, res) {
   });
 });
 
-//un solo documento por id de mongo para antecedentes
-app.get('/api/constancias/:id', function (req, res) {
-  return modeloConstancias.findById(req.params.id, function (err, documento) {  
-    if (!err) {
-      return res.send(documento);
-    } else {
-      return console.log(err);
-    }
-  });
-});
-
 //conjunto de documentos por campo "clave" para correspondencia
 app.get('/api/documentos/porclave/:clave', function (req, res) {
-  return ProductModel.find({ clave: req.params.clave }, function (err, documento) {
+  return modeloCorrespondencia.find({ clave: req.params.clave }, 'clave num_pagina tipo_docto fecha_insercion', function (err, documento) {
     if (!err) {
       return res.send(documento);
     } else {
@@ -321,7 +406,6 @@ app.get('/api/documentos/porclave/:clave', function (req, res) {
     }
   });
 });
-
 
 //devuelve el campo de la imagen del documento a partir del id de mongo para correpondencia
 app.get('/api/documentos/imagen/:id', function (req, res) {
@@ -333,8 +417,24 @@ app.get('/api/documentos/imagen/:id', function (req, res) {
     }
   });
 });
+
+
+//funciones get para constancias/antecedentes-----------------------------------------------
+
+//un solo documento por id de mongo para antecedentes
+app.get('/api/constancias/:id', function (req, res) {
+  return modeloConstancias.findById(req.params.id, function (err, documento) {  
+    if (!err) {
+      return res.send(documento);
+    } else {
+      return console.log(err);
+    }
+  });
+});
+
+
  
-// DELETE to DESTROY
+// DELETE to DESTROY_______________________________________________________________________
  
 // Bulk destroy all products
 app.delete('/api/products', function (req, res) {
