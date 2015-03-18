@@ -8,7 +8,8 @@ var application_root = __dirname,
     bodyParser = require('body-parser'),
     multer = require('multer'),
     errorHandler = require('errorhandler'),
-    mongoose = require('mongoose');
+    mongoose = require('mongoose'),
+    gm = require('gm').subClass({ graphicsMagick: true });; 
  
 var app = express();
 
@@ -323,7 +324,30 @@ app.put('/api/rh/desactivar/:id', function (req, res) {
  
 // Funciones get___________________________________________________________________________________________
  
+//desplegar imagen
 
+app.get('/api/mostrarimagen/:id', function (req, res){  
+  return modeloCorrespondencia.findById(req.params.id, function (err, documento) {  
+    if (!err) {
+      //return res.sendFile(path.resolve('./ejemplo.jpg'));
+      //return res.sendFile(new Buffer(documento.imagen_docto, 'base64'));
+      return res.write(new Buffer(documento.imagen_docto, 'base64'));
+    } else {
+      return console.log(err);
+    }
+  });
+});
+
+app.get('/api/resize', function (req, res){
+  gm('imgs/2.jpg')
+  .resize(240, 240)
+  .noProfile()
+  .write('imgs/2resize.jpg', function (err) {
+    if (!err) { console.log('done'); }
+    else { console.log(err)};
+    res.send("proc2");
+  });
+});
 
 // List products
 app.get('/api/products', function (req, res) {
